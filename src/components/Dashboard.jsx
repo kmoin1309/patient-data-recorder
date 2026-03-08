@@ -29,6 +29,7 @@ const Dashboard = () => {
         hba1c: '',
         glucose_fg: '',
         glucose_pg: '',
+        activity: 'Low',
 
         // Medical History
         hypertensive: 'No',
@@ -45,12 +46,12 @@ const Dashboard = () => {
 
     // Fetch Live Data & Patient Records
     useEffect(() => {
-        // Live Sensor Data — hardware pushes timestamp-keyed records to root of database
-        const sensorRef = ref(db);
+        // Live Sensor Data — hardware pushes timestamp-keyed records under 'sensor' node
+        const sensorRef = ref(db, 'sensor');
         const unsubscribeSensor = onValue(sensorRef, (snapshot) => {
             const data = snapshot.val();
             if (data) {
-                // Filter for only numeric timestamp keys (ignore 'patient_records', 'tests', etc.)
+                // Filter for only numeric timestamp keys
                 const numericKeys = Object.keys(data).filter(k => /^\d+$/.test(k));
                 if (numericKeys.length > 0) {
                     // Sort descending to get the latest timestamp
@@ -146,7 +147,7 @@ const Dashboard = () => {
         setCapturedData(null);
         setFormData(prev => ({
             fullName: '', patientId: '', age: '', gender: 'Male',
-            height: '', weight: '', visitDay: prev.visitDay || 'Day 1', visitDate: new Date().toISOString().split('T')[0], hba1c: '', glucose_fg: '', glucose_pg: '',
+            height: '', weight: '', visitDay: prev.visitDay || 'Day 1', visitDate: new Date().toISOString().split('T')[0], hba1c: '', glucose_fg: '', glucose_pg: '', activity: 'Low',
             hypertensive: 'No', family_hypertension: 'No',
             cardiovascular_disease: 'No', stroke: 'No', family_diabetes: 'No', diabetic: 'No'
         }));
@@ -475,6 +476,14 @@ const Dashboard = () => {
                                             <input type="number" name="weight" value={formData.weight} onChange={handleInputChange} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
                                         </div>
                                         <div>
+                                            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Activity Level</label>
+                                            <select name="activity" value={formData.activity} onChange={handleInputChange} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                                                <option>Low</option>
+                                                <option>Moderate</option>
+                                                <option>High</option>
+                                            </select>
+                                        </div>
+                                        <div>
                                             <div className="col-span-1 md:col-span-2 pt-4 border-t border-slate-100 mt-2">
                                                 <h4 className="text-sm font-bold text-slate-700 mb-3">Clinical Record</h4>
                                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -592,11 +601,6 @@ const Dashboard = () => {
                                             color={{ bg: 'bg-pink-100', text: 'text-pink-600' }}
                                             isCaptured={!!capturedData}
                                         /> */}
-                                        <SensorCard
-                                            icon={Zap} label="Activity" value={sensorData.activity} unit="lvl"
-                                            color={{ bg: 'bg-purple-100', text: 'text-purple-600' }}
-                                            isCaptured={!!capturedData}
-                                        />
                                         <SensorCard
                                             icon={Droplet} label="Acetone" value={sensorData.acetone} unit="mmol/L"
                                             color={{ bg: 'bg-yellow-100', text: 'text-yellow-600' }}
