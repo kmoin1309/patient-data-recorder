@@ -11,8 +11,8 @@ const DataRecorder = ({ patientData, onLogout }) => {
     const [sessionStartTime] = useState(new Date().toISOString());
 
     useEffect(() => {
-        // Hardware pushes timestamp-keyed records to root of database
-        const sensorRef = ref(db);
+        // Hardware pushes timestamp-keyed records under 'sensor' node
+        const sensorRef = ref(db, 'sensor');
         const unsubscribe = onValue(sensorRef, (snapshot) => {
             const data = snapshot.val();
             if (data) {
