@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../firebase';
-import { ref, onValue } from 'firebase/database';
+import { ref, onValue, query, limitToLast, orderByKey } from 'firebase/database';
 import Papa from 'papaparse';
 import { Activity, Heart, Thermometer, Droplet, Wind, Save, Download, LogOut } from 'lucide-react';
 
@@ -11,15 +11,22 @@ const DataRecorder = ({ patientData, onLogout }) => {
     const [sessionStartTime] = useState(new Date().toISOString());
 
     useEffect(() => {
-        const sensorRef = ref(db, 'sensor');
+        // Hardware pushes timestamp-keyed records to root of database
+        const sensorRef = ref(db);
         const unsubscribe = onValue(sensorRef, (snapshot) => {
             const data = snapshot.val();
             if (data) {
-                // Handle nested or flat structure
-                const values = typeof Object.values(data)[0] === 'object'
-                    ? Object.values(data)[0]
-                    : data;
-                setSensorData(values);
+                // Filter for only numeric timestamp keys (ignore 'patient_records', 'tests', etc.)
+                const numericKeys = Object.keys(data).filter(k => /^\d+$/.test(k));
+                if (numericKeys.length > 0) {
+                    const latestKey = numericKeys.sort((a, b) => Number(b) - Number(a))[0];
+                    const latestData = data[latestKey];
+                    if (typeof latestData === 'object' && latestData !== null) {
+                        setSensorData(latestData);
+                    }
+                }
+            } else {
+                setSensorData(null);
             }
         });
 
@@ -144,8 +151,8 @@ const DataRecorder = ({ patientData, onLogout }) => {
                             onClick={handleExportCSV}
                             disabled={recordedData.length === 0}
                             className={`px-6 py-2 rounded-lg font-semibold shadow transition flex items-center space-x-2 ${recordedData.length > 0
-                                    ? 'bg-blue-600 text-white hover:bg-blue-700'
-                                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                 }`}
                         >
                             <Download className="w-5 h-5" />

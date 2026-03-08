@@ -5,7 +5,7 @@ import {
     ChevronRight, Trash2, FileText, ExternalLink, CheckCircle, Calendar
 } from 'lucide-react';
 import { db } from '../firebase';
-import { ref, onValue, push } from 'firebase/database';
+import { ref, onValue, push, query, limitToLast, orderByKey, remove } from 'firebase/database';
 import Papa from 'papaparse';
 import ConsentForm from './ConsentForm';
 
@@ -45,15 +45,23 @@ const Dashboard = () => {
 
     // Fetch Live Data & Patient Records
     useEffect(() => {
-        // Live Sensor Data
-        const sensorRef = ref(db, 'sensor');
+        // Live Sensor Data — hardware pushes timestamp-keyed records to root of database
+        const sensorRef = ref(db);
         const unsubscribeSensor = onValue(sensorRef, (snapshot) => {
             const data = snapshot.val();
             if (data) {
-                const values = typeof Object.values(data)[0] === 'object'
-                    ? Object.values(data)[0]
-                    : data;
-                setSensorData(values);
+                // Filter for only numeric timestamp keys (ignore 'patient_records', 'tests', etc.)
+                const numericKeys = Object.keys(data).filter(k => /^\d+$/.test(k));
+                if (numericKeys.length > 0) {
+                    // Sort descending to get the latest timestamp
+                    const latestKey = numericKeys.sort((a, b) => Number(b) - Number(a))[0];
+                    const latestData = data[latestKey];
+                    if (typeof latestData === 'object' && latestData !== null) {
+                        setSensorData(latestData);
+                    }
+                }
+            } else {
+                setSensorData({});
             }
         });
 
@@ -62,7 +70,11 @@ const Dashboard = () => {
         const unsubscribeRecords = onValue(recordsRef, (snapshot) => {
             const data = snapshot.val();
             if (data) {
-                const recordsArray = Object.values(data).reverse(); // Newest first
+                // Map over the entries to inject the firebase key for the delete operation
+                const recordsArray = Object.entries(data).map(([key, value]) => ({
+                    firebaseKey: key,
+                    ...value
+                })).reverse(); // Newest first
                 setSessionPatients(recordsArray);
             } else {
                 setSessionPatients([]);
@@ -117,6 +129,15 @@ const Dashboard = () => {
             .catch((error) => {
                 alert("Error saving data: " + error.message);
             });
+    };
+
+    const handleDeleteRecord = (firebaseKey) => {
+        if (window.confirm("Are you sure you want to delete this session record?")) {
+            const recordRef = ref(db, `patient_records/${firebaseKey}`);
+            remove(recordRef).catch((error) => {
+                alert("Error deleting record: " + error.message);
+            });
+        }
     };
 
     const resetForm = (closeAddMode = true) => {
@@ -303,7 +324,11 @@ const Dashboard = () => {
                                         </div>
                                     </div>
                                     <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button className="p-1 hover:bg-red-50 text-red-400 rounded">
+                                        <button
+                                            onClick={() => handleDeleteRecord(p.firebaseKey)}
+                                            className="p-1 hover:bg-red-50 text-red-400 rounded"
+                                            title="Delete Record"
+                                        >
                                             <Trash2 className="w-4 h-4" />
                                         </button>
                                     </div>
@@ -370,13 +395,13 @@ const Dashboard = () => {
                                         <UserPlus className="w-5 h-5 mr-2 text-blue-500" />
                                         Personal Details
                                     </h3>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="col-span-2 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="col-span-1 md:col-span-2 bg-slate-50 p-4 rounded-xl border border-slate-100">
                                             <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center">
                                                 <Calendar className="w-4 h-4 mr-2 text-blue-500" />
                                                 Visit Details
                                             </h4>
-                                            <div className="grid grid-cols-2 gap-4">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                                 <div>
                                                     <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Interval / Phase</label>
                                                     <div className="relative">
@@ -415,7 +440,7 @@ const Dashboard = () => {
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="col-span-2">
+                                        <div className="col-span-1 md:col-span-2">
                                             <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Full Name</label>
                                             <input type="text" name="fullName" value={formData.fullName} onChange={handleInputChange} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. John Doe" />
                                         </div>
@@ -450,12 +475,12 @@ const Dashboard = () => {
                                             <input type="number" name="weight" value={formData.weight} onChange={handleInputChange} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
                                         </div>
                                         <div>
-                                            <div className="col-span-2 pt-4 border-t border-slate-100 mt-2">
+                                            <div className="col-span-1 md:col-span-2 pt-4 border-t border-slate-100 mt-2">
                                                 <h4 className="text-sm font-bold text-slate-700 mb-3">Clinical Record</h4>
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div className="col-span-2">
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                    <div className="col-span-1 sm:col-span-2">
                                                         <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Diabetic Status</label>
-                                                        <div className="flex space-x-4">
+                                                        <div className="flex flex-wrap gap-4">
                                                             {['No', 'Yes', 'Pre-diabetic'].map((status) => (
                                                                 <label key={status} className="flex items-center space-x-2 cursor-pointer">
                                                                     <input
@@ -488,128 +513,127 @@ const Dashboard = () => {
                                         </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            {/* Medical History Card */}
-                            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-                                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center">
-                                    <FileText className="w-5 h-5 mr-2 text-purple-500" />
-                                    Medical History
-                                </h3>
-                                <div className="grid grid-cols-2 gap-4">
-                                    {[
-                                        { label: 'Hypertension', key: 'hypertensive' },
-                                        { label: 'Family Hypertension', key: 'family_hypertension' },
-                                        { label: 'Heart Disease', key: 'cardiovascular_disease' },
-                                        { label: 'Stroke History', key: 'stroke' },
-                                        { label: 'Family Diabetes', key: 'family_diabetes' },
-                                    ].map((item) => (
-                                        <div key={item.key} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
-                                            <span className="text-sm font-medium text-slate-700">{item.label}</span>
-                                            <div className="flex bg-white rounded-md border border-slate-200 p-0.5">
-                                                {['No', 'Yes'].map((opt) => (
-                                                    <button
-                                                        key={opt}
-                                                        onClick={() => setFormData(prev => ({ ...prev, [item.key]: opt }))}
-                                                        className={`px-3 py-1 text-xs font-bold rounded transition-colors ${formData[item.key] === opt
-                                                            ? (opt === 'Yes' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-600')
-                                                            : 'text-slate-400 hover:text-slate-600'
-                                                            }`}
-                                                    >
-                                                        {opt}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Right Column: Live Data */}
-                        <div className="col-span-12 lg:col-span-5 space-y-6">
-                            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 sticky top-6">
-                                <div className="flex justify-between items-center mb-6">
-                                    <h3 className="text-lg font-bold text-slate-800 flex items-center">
-                                        <Activity className="w-5 h-5 mr-2 text-green-500 animate-pulse" />
-                                        Live Sensor Data
+                                {/* Medical History Card */}
+                                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+                                    <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center">
+                                        <FileText className="w-5 h-5 mr-2 text-purple-500" />
+                                        Medical History
                                     </h3>
-                                    <div className="flex items-center space-x-2">
-                                        <span className="relative flex h-3 w-3">
-                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                                            <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-                                        </span>
-                                        <span className="text-xs font-medium text-green-600">Connected</span>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {[
+                                            { label: 'Hypertension', key: 'hypertensive' },
+                                            { label: 'Family Hypertension', key: 'family_hypertension' },
+                                            { label: 'Heart Disease', key: 'cardiovascular_disease' },
+                                            { label: 'Stroke History', key: 'stroke' },
+                                            { label: 'Family Diabetes', key: 'family_diabetes' },
+                                        ].map((item) => (
+                                            <div key={item.key} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100 space-y-2 sm:space-y-0">
+                                                <span className="text-sm font-medium text-slate-700">{item.label}</span>
+                                                <div className="flex bg-white rounded-md border border-slate-200 p-0.5 w-full sm:w-auto justify-between">
+                                                    {['No', 'Yes'].map((opt) => (
+                                                        <button
+                                                            key={opt}
+                                                            onClick={() => setFormData(prev => ({ ...prev, [item.key]: opt }))}
+                                                            className={`px-3 py-1 text-xs font-bold rounded transition-colors ${formData[item.key] === opt
+                                                                ? (opt === 'Yes' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-600')
+                                                                : 'text-slate-400 hover:text-slate-600'
+                                                                }`}
+                                                        >{opt}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
+                            </div>
 
-                                <div className="grid grid-cols-2 gap-3 mb-6">
-                                    <SensorCard
-                                        icon={Heart} label="Heart Rate" value={sensorData.heartRate} unit="bpm"
-                                        color={{ bg: 'bg-red-100', text: 'text-red-600' }}
-                                        isCaptured={!!capturedData}
-                                    />
-                                    <SensorCard
-                                        icon={Activity} label="BP (Sys/Dia)" value={`${sensorData.systolic || '--'}/${sensorData.diastolic || '--'}`} unit="mmHg"
-                                        color={{ bg: 'bg-blue-100', text: 'text-blue-600' }}
-                                        isCaptured={!!capturedData}
-                                    />
-                                    <SensorCard
-                                        icon={Thermometer} label="Temp" value={sensorData.temperature} unit="°C"
-                                        color={{ bg: 'bg-orange-100', text: 'text-orange-600' }}
-                                        isCaptured={!!capturedData}
-                                    />
-                                    <SensorCard
-                                        icon={Wind} label="SPO2" value={sensorData.spo2} unit="%"
-                                        color={{ bg: 'bg-cyan-100', text: 'text-cyan-600' }}
-                                        isCaptured={!!capturedData}
-                                    />
-                                    {/* <SensorCard
+                            {/* Right Column: Live Data */}
+                            <div className="col-span-12 lg:col-span-5 space-y-6">
+                                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 sticky top-6">
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h3 className="text-lg font-bold text-slate-800 flex items-center">
+                                            <Activity className="w-5 h-5 mr-2 text-green-500 animate-pulse" />
+                                            Live Sensor Data
+                                        </h3>
+                                        <div className="flex items-center space-x-2">
+                                            <span className="relative flex h-3 w-3">
+                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                                <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                                            </span>
+                                            <span className="text-xs font-medium text-green-600">Connected</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+                                        <SensorCard
+                                            icon={Heart} label="Heart Rate" value={sensorData.heartRate} unit="bpm"
+                                            color={{ bg: 'bg-red-100', text: 'text-red-600' }}
+                                            isCaptured={!!capturedData}
+                                        />
+                                        <SensorCard
+                                            icon={Activity} label="BP (Sys/Dia)" value={`${sensorData.systolic || '--'}/${sensorData.diastolic || '--'}`} unit="mmHg"
+                                            color={{ bg: 'bg-blue-100', text: 'text-blue-600' }}
+                                            isCaptured={!!capturedData}
+                                        />
+                                        <SensorCard
+                                            icon={Thermometer} label="Temp" value={sensorData.temperature} unit="°C"
+                                            color={{ bg: 'bg-orange-100', text: 'text-orange-600' }}
+                                            isCaptured={!!capturedData}
+                                        />
+                                        <SensorCard
+                                            icon={Wind} label="SPO2" value={sensorData.spo2} unit="%"
+                                            color={{ bg: 'bg-cyan-100', text: 'text-cyan-600' }}
+                                            isCaptured={!!capturedData}
+                                        />
+                                        {/* <SensorCard
                                             icon={Droplet} label="Glucose" value={sensorData.glucose} unit="mg/dL"
                                             color={{ bg: 'bg-pink-100', text: 'text-pink-600' }}
                                             isCaptured={!!capturedData}
                                         /> */}
-                                    <SensorCard
-                                        icon={Zap} label="Activity" value={sensorData.activity} unit="lvl"
-                                        color={{ bg: 'bg-purple-100', text: 'text-purple-600' }}
-                                        isCaptured={!!capturedData}
-                                    />
-                                    <SensorCard
-                                        icon={Droplet} label="Acetone" value={sensorData.acetone} unit="mmol/L"
-                                        color={{ bg: 'bg-yellow-100', text: 'text-yellow-600' }}
-                                        isCaptured={!!capturedData}
-                                    />
-                                </div>
+                                        <SensorCard
+                                            icon={Zap} label="Activity" value={sensorData.activity} unit="lvl"
+                                            color={{ bg: 'bg-purple-100', text: 'text-purple-600' }}
+                                            isCaptured={!!capturedData}
+                                        />
+                                        <SensorCard
+                                            icon={Droplet} label="Acetone" value={sensorData.acetone} unit="mmol/L"
+                                            color={{ bg: 'bg-yellow-100', text: 'text-yellow-600' }}
+                                            isCaptured={!!capturedData}
+                                        />
+                                    </div>
 
-                                <div className="space-y-3">
-                                    {!capturedData ? (
-                                        <button
-                                            onClick={handleCapture}
-                                            className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold shadow-lg shadow-slate-200 transition-all flex items-center justify-center space-x-2"
-                                        >
-                                            <Save className="w-5 h-5" />
-                                            <span>Capture Current Values</span>
-                                        </button>
-                                    ) : (
-                                        <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
-                                            <p className="text-green-700 font-medium mb-2">Values Captured Successfully</p>
-                                            <div className="flex space-x-2">
-                                                <button
-                                                    onClick={() => setCapturedData(null)}
-                                                    className="flex-1 py-2 bg-white border border-green-200 text-green-700 rounded-lg font-semibold hover:bg-green-50 transition"
-                                                >
-                                                    Retake
-                                                </button>
-                                                <button
-                                                    onClick={handleSavePatient}
-                                                    disabled={!formData.fullName || !formData.patientId}
-                                                    className="flex-1 py-2 bg-green-600 text-white rounded-lg font-bold shadow-md hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                                                >
-                                                    Save Record
-                                                </button>
+                                    <div className="space-y-3">
+                                        {!capturedData ? (
+                                            <button
+                                                onClick={handleCapture}
+                                                className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold shadow-lg shadow-slate-200 transition-all flex items-center justify-center space-x-2"
+                                            >
+                                                <Save className="w-5 h-5" />
+                                                <span>Capture Current Values</span>
+                                            </button>
+                                        ) : (
+                                            <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+                                                <p className="text-green-700 font-medium mb-2">Values Captured Successfully</p>
+                                                <div className="flex flex-col sm:flex-row gap-2">
+                                                    <button
+                                                        onClick={() => setCapturedData(null)}
+                                                        className="flex-1 py-2 bg-white border border-green-200 text-green-700 rounded-lg font-semibold hover:bg-green-50 transition"
+                                                    >
+                                                        Retake
+                                                    </button>
+                                                    <button
+                                                        onClick={handleSavePatient}
+                                                        disabled={!formData.fullName || !formData.patientId}
+                                                        className="flex-1 py-2 bg-green-600 text-white rounded-lg font-bold shadow-md hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        Save Record
+                                                    </button>
+                                                </div>
                                             </div>
-                                        </div>
-                                    )}
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>
